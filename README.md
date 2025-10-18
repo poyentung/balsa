@@ -120,6 +120,33 @@ python scripts/run.py -m search_method=mcmc,cmaes,da \
 
 Results will be saved in the `results` directory, including performance metrics and optimisation trajectories for each algorithm.
 
+### Noise Addition to Mimic Real-World Scenarios
+You can optionally add relative Gaussian noise to objective evaluations and fix the RNG seed for reproducible runs.
+
+- **relative_gaussian_noise_std**: Multiplicative noise level (σ = |y| × value). Default: `0.0` (disabled).
+- **rng_seed**: Integer seed for deterministic RNG. Default: `0`.
+
+Configure via YAML (e.g., `scripts/conf/run.yaml`):
+
+```yaml
+# scripts/conf/run.yaml
+relative_gaussian_noise_std: 0.01
+rng_seed: 0
+```
+
+Or override from the CLI:
+
+```bash
+python scripts/run.py -m search_method=mcmc,cmaes,da \
+                         obj_func_name=ackley \
+                         dims=10 \
+                         num_acquisitions=100 \
+                         num_samples_per_acquisition=20 \
+                         num_init_samples=50 \
+                         relative_gaussian_noise_std=0.01 \
+                         rng_seed=0
+```
+
 ## Tutorials
 
 We provide detailed tutorials to help you get started with BALSA:

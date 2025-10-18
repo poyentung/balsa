@@ -1,8 +1,9 @@
 from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
-from typing import Optional, Dict, Any, override
+from typing import Optional, Dict, Any, override, ClassVar
 
 import numpy as np
+from numpy.random import Generator, default_rng
 from numpy.typing import NDArray
 from balsa.utils import Tracker
 
@@ -14,6 +15,8 @@ class ObjectiveFunction(ABC):
     dims: int = field(default=3)
     name: str = field(init=False)
     turn: float = field(default=0.1)
+    relative_gaussian_noise_std: float = field(default=0.0)
+    rng_seed: int = field(default=0)
     iters: Optional[int] = None
     func_args: Dict[str, Any] = field(default_factory=dict)
 
@@ -21,10 +24,15 @@ class ObjectiveFunction(ABC):
     ub: Optional[NDArray] = None
     counter: int = 0
     tracker: Tracker = field(init=False)
+    rng: Generator = field(init=False, repr=False)
 
     def __post_init__(self):
         """Initialise the tracker after object creation."""
         self.tracker = Tracker(f"{self.name}-{self.dims}")
+        self.rng = default_rng(seed=self.rng_seed)
+
+        if self.relative_gaussian_noise_std < 0:
+            raise ValueError("relative_gaussian_noise_std must be non-negative.")
 
     @abstractmethod
     def _scaled(self, y: float) -> float:
@@ -38,6 +46,22 @@ class ObjectiveFunction(ABC):
         Abstract method to be implemented by subclasses.
         """
         pass
+
+    def _apply_gaussian_noise_relative(self, y: float) -> float:
+        """Add Gaussian noise to the observation if enabled."""
+        if self.relative_gaussian_noise_std <= 0:
+            return y
+        sigma = abs(y) * self.relative_gaussian_noise_std
+        noisy_y = float(y + self.rng.normal(scale=sigma))
+        return noisy_y
+
+    def _finalize_output(
+        self, y: float, x: NDArray, saver: bool, return_scaled: bool
+    ) -> float:
+        """Track the (possibly noisy) value and apply optional scaling."""
+        y_noisy = self._apply_gaussian_noise_relative(y)
+        self.tracker.track(y_noisy, x, saver)
+        return y_noisy if not return_scaled else self._scaled(y_noisy)
 
 
 class Ackley(ObjectiveFunction):
@@ -65,8 +89,7 @@ class Ackley(ObjectiveFunction):
             + 20
             + np.e
         )
-        self.tracker.track(y, x, saver)
-        return y if not return_scaled else self._scaled(y)
+        return self._finalize_output(y, x, saver, return_scaled)
 
 
 class Rastrigin(ObjectiveFunction):
@@ -93,8 +116,7 @@ class Rastrigin(ObjectiveFunction):
         sum = np.sum(x**2 - A * np.cos(2 * np.pi * x))
         y = float(A * n + sum)
 
-        self.tracker.track(y, x, saver)
-        return y if not return_scaled else self._scaled(y)
+        return self._finalize_output(y, x, saver, return_scaled)
 
 
 class Rosenbrock(ObjectiveFunction):
@@ -117,8 +139,7 @@ class Rosenbrock(ObjectiveFunction):
         assert x.ndim == 1
         y = float(np.sum(100.0 * (x[1:] - x[:-1] ** 2.0) ** 2.0 + (1 - x[:-1]) ** 2.0))
 
-        self.tracker.track(y, x, saver)
-        return y if not return_scaled else self._scaled(y)
+        return self._finalize_output(y, x, saver, return_scaled)
 
 
 class Griewank(ObjectiveFunction):
@@ -143,8 +164,7 @@ class Griewank(ObjectiveFunction):
         prod_term = np.prod(np.cos(x / np.sqrt(np.arange(1, len(x) + 1))))
         y = float(1 + sum_term / 4000 - prod_term)
 
-        self.tracker.track(y, x, saver)
-        return y if not return_scaled else self._scaled(y)
+        return self._finalize_output(y, x, saver, return_scaled)
 
 
 class Michalewicz(ObjectiveFunction):
@@ -173,8 +193,7 @@ class Michalewicz(ObjectiveFunction):
             y += float(np.sin(x[i]) * np.sin((i + 1) * x[i] ** 2 / np.pi) ** (2 * m))
         y *= -1.0
 
-        self.tracker.track(y, x, saver)
-        return y if not return_scaled else self._scaled(y)
+        return self._finalize_output(y, x, saver, return_scaled)
 
 
 class Schwefel(ObjectiveFunction):
@@ -201,12 +220,11 @@ class Schwefel(ObjectiveFunction):
         sum_part = np.sum(-x * np.sin(np.sqrt(np.abs(x))))
 
         if np.all(np.array(x) == 421, axis=0):
-            return 0
+            return self._finalize_output(0.0, x, saver, return_scaled)
 
         y = float(418.9829 * dimension + sum_part)
 
-        self.tracker.track(y, x, saver)
-        return y if not return_scaled else self._scaled(y)
+        return self._finalize_output(y, x, saver, return_scaled)
 
 
 class Sphere(ObjectiveFunction):
@@ -230,8 +248,7 @@ class Sphere(ObjectiveFunction):
         sum = np.sum(x**2)
         y = float(sum)
 
-        self.tracker.track(y, x, saver)
-        return y if not return_scaled else self._scaled(y)
+        return self._finalize_output(y, x, saver, return_scaled)
 
 
 class Levy(ObjectiveFunction):
@@ -264,5 +281,4 @@ class Levy(ObjectiveFunction):
             )
         y = float(sum)
 
-        self.tracker.track(y, x, saver)
-        return y if not return_scaled else self._scaled(y)
+        return self._finalize_output(y, x, saver, return_scaled)
