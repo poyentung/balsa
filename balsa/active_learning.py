@@ -115,6 +115,8 @@ class OptimisationConfig:
     search_method_args: dict = field(default_factory=dict)
     func_args: dict = field(default_factory=dict)
     surrogate_args: dict = field(default_factory=dict)
+    relative_gaussian_noise_std: float = 0.0
+    rng_seed: int = 0
 
     def __post_init__(self):
         """Validate configuration parameters."""
